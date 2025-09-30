@@ -1,0 +1,27 @@
+﻿<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MailRU Checker</title>
+  <link rel="stylesheet" href="css/popup.css">
+  <style>
+    body { font: 13px/1.4 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial,sans-serif; min-width: 320px; color: #222; }
+    .header { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid #eee; }
+    .acc { border-bottom:1px solid #f0f0f0; padding:6px 8px; }
+    .msg { display:flex; align-items:center; gap:8px; padding:4px 0; }
+    .dot { width:8px; height:8px; border-radius:50%; background:#999; cursor:pointer; flex:0 0 8px; }
+    .subj { cursor:pointer; color:#0366d6; text-decoration:none; }
+    .from { color:#666; margin-left:6px; }
+    .empty { padding:12px; color:#777; }
+    button { padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#fafafa; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <strong>MailRU Checker</strong>
+  </div>
+  <div id="list"></div>
+
+  <script src="js/popup.mv3.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "MailRU Checker",
+  "description": "Отображение количества непрочитанных сообщений в почтовом ящике Mail.ru",
+  "version": "0.0.2",
+  "icons": {
+    "16": "img/16_activ.png",
+    "48": "img/48_activ.png",
+    "128": "img/128_activ.png"
+  },
+  "action": {
+    "default_icon": "img/ico_panel.png",
+    "default_title": "MailRU Checker",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "alarms",
+    "storage",
+    "cookies",
+	"tabs"
+  ],
+  "host_permissions": [
+    "https://e.mail.ru/*",
+    "https://mailru-checker-api.e.mail.ru/*",
+    "https://portal.mail.ru/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

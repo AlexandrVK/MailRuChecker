@@ -17,7 +17,8 @@
     "alarms",
     "storage",
     "cookies",
-	"tabs"
+	"tabs",
+    "scripting"
   ],
   "host_permissions": [
     "https://e.mail.ru/*",

@@ -7,26 +7,39 @@
 
 const POLL_PERIOD_MINUTES = 0.3;
 
-const ACCOUNTS_KEY = "accounts";          // [{ email: "user@mail.ru" }]
-const LAST_MESSAGES_KEY = "lastMessages";  // { [email]: [{id, subject, from, link, fid}] }
+const ACCOUNTS_KEY = "accounts";
+const LAST_MESSAGES_KEY = "lastMessages";
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create("mailru.check", { periodInMinutes: POLL_PERIOD_MINUTES, delayInMinutes: 0.1 });
+  chrome.alarms.create("mailru.check", {
+    periodInMinutes: POLL_PERIOD_MINUTES,
+    delayInMinutes: 0.1,
+  });
   pollAll();
 });
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create("mailru.check", { periodInMinutes: POLL_PERIOD_MINUTES, delayInMinutes: 0.1 });
+  chrome.alarms.create("mailru.check", {
+    periodInMinutes: POLL_PERIOD_MINUTES,
+    delayInMinutes: 0.1,
+  });
   pollAll();
 });
-chrome.alarms.onAlarm.addListener(a => {
+chrome.alarms.onAlarm.addListener((a) => {
   if (a?.name === "mailru.check") pollAll();
 });
 
 // ---- Core polling ----
 async function pollAll() {
+  let hadError = false;
+
   try {
-    const { [ACCOUNTS_KEY]: accounts = [] } = await chrome.storage.local.get(ACCOUNTS_KEY);
+    const { [ACCOUNTS_KEY]: accounts = [] } = await chrome.storage.local.get(
+      ACCOUNTS_KEY
+    );
+
     if (!accounts.length) {
+      // аккаунтов нет — ошибка
+      console.error("pollAll error: нет подключенных аккаунтов");
       await chrome.action.setBadgeText({ text: "" });
       await chrome.action.setIcon({ path: "img/ico_panel.png" });
       await chrome.storage.local.set({ [LAST_MESSAGES_KEY]: {} });
@@ -43,37 +56,56 @@ async function pollAll() {
       try {
         const { count, messages } = await fetchUnreadList(email);
         byEmail[email] = messages || [];
-        totalUnread += (typeof count === "number" ? count : (messages?.length || 0));
+        totalUnread +=
+          typeof count === "number" ? count : messages?.length || 0;
       } catch (e) {
-        console.warn("poll error for", email, e);
+        console.error("pollAll error для аккаунта", email, ":", e);
         byEmail[email] = [];
+        hadError = true;
       }
     }
 
-    // cache + badge
     await chrome.storage.local.set({ [LAST_MESSAGES_KEY]: byEmail });
-    const badge = totalUnread > 0 ? (totalUnread > 999 ? "999+" : String(totalUnread)) : "";
-    await chrome.action.setBadgeText({ text: badge });
-    try { await chrome.action.setBadgeBackgroundColor({ color: "#d33" }); } catch {}
 
-    // активные иконки, если мы реально получили данные
-    const haveAny = Object.values(byEmail).some(arr => (arr && arr.length));
-    await chrome.action.setIcon(haveAny ? {
-      path: { 16: "img/16_activ.png", 48: "img/48_activ.png", 128: "img/128_activ.png" }
-    } : { path: "img/ico_panel.png" });
+    // ---------- БЕЙДЖ И ИКОНКА ----------
+    if (hadError) {
+      // ошибка / нет авторизации / сайт недоступен
+      console.error("pollAll error: не удалось подключиться к mail.ru");
+      await chrome.action.setBadgeText({ text: "" });
+      await chrome.action.setIcon({ path: "img/ico_panel.png" });
+    } else {
+      // успешное подключение — всегда иконка activ, даже если писем 0
+      const badgeText = totalUnread > 999 ? "999+" : String(totalUnread);
 
+      await chrome.action.setBadgeText({ text: badgeText });
+      await chrome.action.setBadgeBackgroundColor({ color: "#d33" });
+      await chrome.action.setIcon({
+        path: {
+          16: "img/16_activ.png",
+          48: "img/48_activ.png",
+          128: "img/128_activ.png",
+        },
+      });
+    }
   } catch (e) {
-    console.error("pollAll error", e);
+    // фатальная ошибка pollAll
+    console.error("pollAll fatal error:", e);
+    try {
+      await chrome.action.setBadgeText({ text: "" });
+      await chrome.action.setIcon({ path: "img/ico_panel.png" });
+    } catch {}
   }
 }
 
-// ---- Mail.ru checker API (как в рабочей версии) ----
+// ---- Mail.ru checker API ----
 async function fetchToken(email) {
-  const url = `https://mailru-checker-api.e.mail.ru/api/v1/tokens?email=${encodeURIComponent(email)}&x-email=${encodeURIComponent(email)}`;
+  const url = `https://mailru-checker-api.e.mail.ru/api/v1/tokens?email=${encodeURIComponent(
+    email
+  )}&x-email=${encodeURIComponent(email)}`;
   const r = await fetch(url, { method: "GET" });
   if (!r.ok) throw new Error("token fetch failed " + r.status);
   const j = await r.json().catch(() => ({}));
-  return (j?.body?.token) || j?.token || null;
+  return j?.body?.token || j?.token || null;
 }
 
 function normalizeFrom(m) {
@@ -86,14 +118,15 @@ function normalizeFrom(m) {
   return mail || name || "";
 }
 
-
 function buildMessageLink(m) {
-  // Прямая ссылка на письмо (пример от тебя: https://e.mail.ru/5/1:48473a19a219c843:5/)
   const fid = String(m.fid ?? m.folder_id ?? m.folder ?? "5");
   const mid = m.id || m.mid || m.message_id || m.msgid || "";
   const direct = m.link || m.url || "";
   if (direct) return direct;
-  if (mid && /:/.test(mid)) return `https://e.mail.ru/${encodeURIComponent(fid)}/${encodeURIComponent(mid)}/`;
+  if (mid && /:/.test(mid))
+    return `https://e.mail.ru/${encodeURIComponent(fid)}/${encodeURIComponent(
+      mid
+    )}/`;
   if (mid) return `https://e.mail.ru/message/${encodeURIComponent(mid)}/`;
   return "https://e.mail.ru/messages/inbox/";
 }
@@ -102,21 +135,24 @@ async function fetchUnreadList(email) {
   let count = 0;
   let list = [];
 
-  // 1) Основной список через status/unread
   try {
     const token = await fetchToken(email);
-    const url = `https://mailru-checker-api.e.mail.ru/api/v1/messages/status/unread?email=${encodeURIComponent(email)}&x-email=${encodeURIComponent(email)}&token=${encodeURIComponent(token || "")}&limit=50`;
+    const url = `https://mailru-checker-api.e.mail.ru/api/v1/messages/status/unread?email=${encodeURIComponent(
+      email
+    )}&x-email=${encodeURIComponent(email)}&token=${encodeURIComponent(
+      token || ""
+    )}&limit=50`;
     const r = await fetch(url, { method: "GET" });
     if (r.ok) {
       const j = await r.json().catch(() => ({}));
       const arr = j?.body || j?.data || j?.items || j?.messages || [];
       if (Array.isArray(arr)) {
-        list = arr.map(m => ({
+        list = arr.map((m) => ({
           id: m.id || m.mid || m.message_id || m.msgid || "",
           subject: m.subject || m.subj || "(без темы)",
           from: normalizeFrom(m),
           link: buildMessageLink(m),
-          fid: String(m.fid ?? m.folder_id ?? m.folder ?? "5")
+          fid: String(m.fid ?? m.folder_id ?? m.folder ?? "5"),
         }));
         count = list.length;
       }
@@ -125,10 +161,12 @@ async function fetchUnreadList(email) {
     console.warn("fetchUnreadList list error", e);
   }
 
-  // 2) Если список не дали — хотя бы цифру возьмём из NaviData
   if (!count) {
     try {
-      const nav = await fetch("https://portal.mail.ru/NaviData?mac=1", { method: "GET", credentials: "include" });
+      const nav = await fetch("https://portal.mail.ru/NaviData?mac=1", {
+        method: "GET",
+        credentials: "include",
+      });
       if (nav.ok) {
         const text = await nav.text();
         const m = text.match(/"unread":\s*(\d+)/i);
@@ -142,50 +180,238 @@ async function fetchUnreadList(email) {
   return { count, messages: list };
 }
 
-async function markRead(email, ids) {
-  console.warn("markRead is not implemented");
-  return false;
+// ---------------- MARK READ SERVICE ----------------
+
+async function openHiddenTab(url) {
+  const tab = await chrome.tabs.create({
+    url,
+    active: false,
+  });
+
+  // ⚡ отключаем изображения (ускорение)
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const style = document.createElement("style");
+        style.textContent = `
+          img, picture, video {
+            display: none !important;
+          }
+        `;
+        document.documentElement.appendChild(style);
+      },
+    });
+  } catch {}
+
+  return tab.id;
 }
 
-// ---- Messaging ----
+function waitForSelector(tabId, selector, timeout = 10000) {
+  return chrome.scripting.executeScript({
+    target: { tabId },
+    func: (selector, timeout) => {
+      return new Promise((resolve, reject) => {
+        const found = document.querySelector(selector);
+        if (found) return resolve(true);
+
+        const obs = new MutationObserver(() => {
+          if (document.querySelector(selector)) {
+            obs.disconnect();
+            resolve(true);
+          }
+        });
+
+        obs.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+        });
+
+        setTimeout(() => {
+          obs.disconnect();
+          reject("timeout");
+        }, timeout);
+      });
+    },
+    args: [selector, timeout],
+  });
+}
+
+async function exec(tabId, fn) {
+  return chrome.scripting.executeScript({
+    target: { tabId },
+    func: fn,
+  });
+}
+
+// ✅ Пометка одного письма через открытие вкладки
+async function markOneMessageRead(messageHref) {
+  const midMatch = messageHref.match(/(\d+)/);
+  if (!midMatch) return;
+
+  const MID = midMatch[1];
+
+  const tabId = await openHiddenTab("https://e.mail.ru/search/?q_read=1");
+
+  try {
+    // ждём появления списка писем
+    await waitForSelector(tabId, "a.llc", 20000);
+
+    const res = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [MID],
+      func: (MID) => {
+        const row = document.querySelector(`a.llc[data-id="${MID}"]`);
+        if (!row) return false;
+
+        const dot = row.querySelector(
+          ".llc__read-status aside[title*='прочитан']"
+        );
+        if (!dot) return false;
+
+        // прокрутка нужна — Mail.ru иногда игнорирует клики вне viewport
+        row.scrollIntoView({ block: "center" });
+
+        dot.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+          })
+        );
+
+        return true;
+      },
+    });
+
+    if (!res?.[0]?.result) {
+      // не удалось пометить — просто выходим
+      return;
+    }
+
+    // короткая пауза, чтобы Mail.ru применил состояние
+    //await new Promise(r => setTimeout(r, 300));
+  } catch {
+    // намеренно без логов
+  } finally {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {}
+  }
+}
+
+// ✅ ИСПРАВЛЕНО: правильная работа с множественной пометкой
+async function markAllReadInList(url) {
+  const tabId = await openHiddenTab(url);
+
+  try {
+    // 1️⃣ ждём кнопку "Выделить все"
+    await waitForSelector(
+      tabId,
+      "[data-name='select_all'], [title*='Выделить все']",
+      15000
+    );
+
+    // 2️⃣ выделяем все письма
+    await exec(tabId, () => {
+      const selectAll =
+        document.querySelector("[data-name='select_all']") ||
+        document.querySelector("[title*='Выделить все']");
+
+      if (!selectAll) throw "select_all not found";
+      selectAll.click();
+    });
+
+    // 3️⃣ ждём кнопку "Прочитать"
+    await waitForSelector(
+      tabId,
+      "[data-name='read'], [title*='Прочитать'], .icon_mark-read",
+      10000
+    );
+
+    // 4️⃣ нажимаем "Прочитать"
+    await exec(tabId, () => {
+      const readBtn =
+        document.querySelector("[data-name='read']") ||
+        document.querySelector("[title*='Прочитать']") ||
+        document.querySelector(".icon_mark-read");
+
+      if (!readBtn) throw "read button not found";
+      readBtn.click();
+    });
+  } catch (e) {
+    console.error("markAllReadInList FAILED:", e);
+  } finally {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {}
+  }
+}
+
+// ---------------- messaging ----------------
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
-      if (!msg?.type) return;
+      console.log("Background получил сообщение:", msg);
 
       if (msg.type === "getState") {
-        const { [ACCOUNTS_KEY]: accounts = [] } = await chrome.storage.local.get(ACCOUNTS_KEY);
-        const { [LAST_MESSAGES_KEY]: cache = {} } = await chrome.storage.local.get(LAST_MESSAGES_KEY);
+        const { [ACCOUNTS_KEY]: accounts = [] } =
+          await chrome.storage.local.get(ACCOUNTS_KEY);
+        const { [LAST_MESSAGES_KEY]: cache = {} } =
+          await chrome.storage.local.get(LAST_MESSAGES_KEY);
         sendResponse({ accounts, cache });
+      } else if (msg.type === "markRead") {
+        console.log("markRead запрос:", msg);
 
-      } else if (msg.type === "syncAccounts") {
-        const accounts = (msg.accounts || [])
-          .map(a => (typeof a === "string" ? { email: a } : a))
-          .filter(a => a && a.email);
+        try {
+          // ▶️ 1 письмо — пришёл href
+          if (msg.href) {
+            console.log("Пометка одного письма по href:", msg.href);
+            await markOneMessageRead(msg.href);
+            console.log("Одиночная пометка завершена");
+          }
+          // ▶️ все письма
+          else {
+            console.log("Пометка всех писем прочитанными");
+            await markAllReadInList("https://e.mail.ru/search/?q_read=1");
+            console.log("Массовая пометка завершена");
+          }
+
+          sendResponse({ ok: true });
+        } catch (e) {
+          console.error("markRead FAILED:", e);
+          sendResponse({ ok: false, error: String(e) });
+        }
+
+        console.log("Запуск pollAll для обновления");
+
+        // Даём время на применение изменений на сервере
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        await pollAll();
+        console.log("pollAll завершён");
+
+        sendResponse({ ok: true });
+      } else if (msg.type === "addAccount") {
+        const { [ACCOUNTS_KEY]: accounts = [] } =
+          await chrome.storage.local.get(ACCOUNTS_KEY);
+        if (
+          !accounts.some(
+            (a) => (typeof a === "string" ? a : a.email) === msg.email
+          )
+        ) {
+          accounts.push({ email: msg.email });
+        }
         await chrome.storage.local.set({ [ACCOUNTS_KEY]: accounts });
         await pollAll();
         sendResponse({ ok: true });
-
-      } else if (msg.type === "markRead") {
-		  console.warn("markRead is not implemented");
-		  sendResponse({ ok: false });
-	  
-	} else if (msg.type === "addAccount") {
-		    // Загружаем текущее состояние
-		    const { [ACCOUNTS_KEY]: accounts = [] } = await chrome.storage.local.get(ACCOUNTS_KEY);
-		
-		    // Проверяем дубли
-		    if (!accounts.some(a => a.email === msg.email)) {
-		        accounts.push({ email: msg.email });
-		    }
-		
-		    await chrome.storage.local.set({ [ACCOUNTS_KEY]: accounts });
-		    sendResponse({ ok: true });
-		}
+      }
     } catch (e) {
-      console.error("SW onMessage error", e);
-      try { sendResponse({ ok: false, error: String(e) }); } catch {}
+      console.error("Message handler error:", e);
+      sendResponse({ ok: false, error: String(e) });
     }
   })();
-  return true; // async
+
+  return true;
 });

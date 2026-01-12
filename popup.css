@@ -3,6 +3,14 @@ body {
     sans-serif;
   min-width: 600px;
   color: #222;
+  background: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #1e1e1e;
+    color: #e4e4e4;
+  }
 }
 
 .header {
@@ -13,9 +21,21 @@ body {
   border-bottom: 1px solid #eee;
 }
 
+@media (prefers-color-scheme: dark) {
+  .header {
+    border-bottom-color: #3a3a3a;
+  }
+}
+
 .acc {
   border-bottom: 1px solid #f0f0f0;
   padding: 6px 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .acc {
+    border-bottom-color: #3a3a3a;
+  }
 }
 
 .acc-title {
@@ -42,6 +62,18 @@ body {
   cursor: not-allowed;
 }
 
+@media (prefers-color-scheme: dark) {
+  .read-all-btn {
+    border-color: #555;
+    background: #2d2d2d;
+    color: #e4e4e4;
+  }
+
+  .read-all-btn:hover:not(:disabled) {
+    background: #3a3a3a;
+  }
+}
+
 .count-link {
   display: inline-flex !important;
   align-items: center !important;
@@ -59,6 +91,16 @@ body {
   cursor: pointer !important;
 }
 
+@media (prefers-color-scheme: dark) {
+  .count-link {
+    background: #4a9eff !important;
+  }
+
+  .count-link:hover {
+    background: #5baaff !important;
+  }
+}
+
 .msg-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 33%) 1fr;
@@ -71,16 +113,44 @@ body {
   opacity: 0.4;
 }
 
+@media (prefers-color-scheme: dark) {
+  .msg-row.fading {
+    opacity: 0.3;
+  }
+}
+
 .msg-dot {
   font-size: 18px;
   cursor: pointer;
   user-select: none;
+  color: #999;
+}
+
+@media (prefers-color-scheme: dark) {
+  .msg-dot {
+    color: #bbb;
+  }
+
+  .msg-dot:hover {
+    color: #fff;
+  }
 }
 
 .msg-link {
   display: contents;
   text-decoration: none;
   color: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .msg-link {
+    color: inherit;
+  }
+
+  .msg-link:hover .msg-from-name,
+  .msg-link:hover .msg-subj {
+    color: #4a9eff;
+  }
 }
 
 .msg-sender-block {
@@ -115,10 +185,26 @@ body {
   flex: 0 0 8px;
 }
 
+@media (prefers-color-scheme: dark) {
+  .dot {
+    background: #bbb;
+  }
+}
+
 .subj {
   cursor: pointer;
   color: #0366d6;
   text-decoration: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .subj {
+    color: #4a9eff;
+  }
+
+  .subj:hover {
+    color: #5baaff;
+  }
 }
 
 .from {
@@ -126,9 +212,21 @@ body {
   margin-left: 6px;
 }
 
+@media (prefers-color-scheme: dark) {
+  .from {
+    color: #aaa;
+  }
+}
+
 .empty {
   padding: 12px;
   color: #777;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empty {
+    color: #999;
+  }
 }
 
 button {
@@ -139,12 +237,38 @@ button {
   cursor: pointer;
 }
 
+@media (prefers-color-scheme: dark) {
+  button {
+    border-color: #555;
+    background: #2d2d2d;
+    color: #e4e4e4;
+  }
+
+  button:hover:not(:disabled) {
+    background: #3a3a3a;
+  }
+}
+
 #manualEmail {
   width: 90%;
   margin: 4px 0;
   padding: 6px 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
+  background: #fff;
+  color: #222;
+}
+
+@media (prefers-color-scheme: dark) {
+  #manualEmail {
+    border-color: #555;
+    background: #2d2d2d;
+    color: #e4e4e4;
+  }
+
+  #manualEmail::placeholder {
+    color: #888;
+  }
 }
 
 #saveEmail {

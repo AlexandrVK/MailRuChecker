@@ -1,4 +1,4 @@
-﻿// background.js (MV3 service worker) — Mail.ru Checker
+// background.js (MV3 service worker) — Mail.ru Checker
 // ✔ показывает точное число непрочитанных (бейдж)
 // ✔ формирует прямые ссылки на письма (fid/id формат)
 // ✔ "точка" помечает письмо прочитанным и обновляет список/бейдж
@@ -6,6 +6,9 @@
 // ✔ если данные успешно получены — ставит активные иконки
 
 const POLL_PERIOD_MINUTES = 0.3;
+const MARK_READ_DELAY_MS = 2000;    // пауза после клика "Прочитать" перед закрытием вкладки
+const WAIT_LETTERS_MS   = 20000;   // ожидание загрузки списка писем (a.llc)
+const WAIT_PANEL_MS     = 10000;   // ожидание появления панели "Выделить все" / "Прочитать" // пауза после клика "Прочитать" перед закрытием вкладки
 
 const ACCOUNTS_KEY = "accounts";
 const LAST_MESSAGES_KEY = "lastMessages";
@@ -254,97 +257,112 @@ async function markOneMessageRead(messageHref) {
   const tabId = await openHiddenTab("https://e.mail.ru/search/?q_read=1");
 
   try {
-    // ждём появления списка писем
-    await waitForSelector(tabId, "a.llc", 20000);
+    await waitForSelector(tabId, "a.llc", WAIT_LETTERS_MS);
 
     const res = await chrome.scripting.executeScript({
       target: { tabId },
       args: [MID],
       func: (MID) => {
+        function rc(el) {
+          ["pointerover","pointerenter","mouseover","mouseenter",
+           "pointermove","mousemove","pointerdown","mousedown",
+           "pointerup","mouseup","click"].forEach(t =>
+            el.dispatchEvent(new MouseEvent(t, {bubbles:true,cancelable:true,view:window}))
+          );
+        }
         const row = document.querySelector(`a.llc[data-id="${MID}"]`);
-        if (!row) return false;
-
-        const dot = row.querySelector(
-          ".llc__read-status aside[title*='прочитан']"
-        );
-        if (!dot) return false;
-
-        // прокрутка нужна — Mail.ru иногда игнорирует клики вне viewport
-        row.scrollIntoView({ block: "center" });
-
-        dot.dispatchEvent(
-          new MouseEvent("click", {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-          })
-        );
-
-        return true;
+        if (!row) return {ok:false, reason:"row not found MID="+MID};
+        const dot = row.querySelector('aside[title="Пометить прочитанным"]');
+        if (!dot) {
+          const titles = Array.from(row.querySelectorAll("aside")).map(a=>a.title||a.className);
+          return {ok:false, reason:"aside not found, titles="+JSON.stringify(titles)};
+        }
+        row.scrollIntoView({block:"center"});
+        rc(dot);
+        return {ok:true};
       },
     });
 
-    if (!res?.[0]?.result) {
-      // не удалось пометить — просто выходим
-      return;
-    }
 
-    // короткая пауза, чтобы Mail.ru применил состояние
-    //await new Promise(r => setTimeout(r, 300));
-  } catch {
-    // намеренно без логов
+    // ждём пока Mail.ru применит изменение перед закрытием вкладки
+    await new Promise(r => setTimeout(r, MARK_READ_DELAY_MS));
+
+  } catch(e) {
+    console.error("markOne error:", e);
   } finally {
-    try {
-      await chrome.tabs.remove(tabId);
-    } catch {}
+    try { await chrome.tabs.remove(tabId); } catch {}
   }
 }
 
-// ✅ ИСПРАВЛЕНО: правильная работа с множественной пометкой
 async function markAllReadInList(url) {
   const tabId = await openHiddenTab(url);
 
   try {
-    // 1️⃣ ждём кнопку "Выделить все"
-    await waitForSelector(
-      tabId,
-      "[data-name='select_all'], [title*='Выделить все']",
-      15000
-    );
+    function rc(el) {
+      ["pointerover","pointerenter","mouseover","mouseenter",
+       "pointermove","mousemove","pointerdown","mousedown",
+       "pointerup","mouseup","click"].forEach(t =>
+        el.dispatchEvent(new MouseEvent(t, {bubbles:true,cancelable:true,view:window}))
+      );
+    }
 
-    // 2️⃣ выделяем все письма
-    await exec(tabId, () => {
-      const selectAll =
-        document.querySelector("[data-name='select_all']") ||
-        document.querySelector("[title*='Выделить все']");
+    await waitForSelector(tabId, "a.llc", WAIT_LETTERS_MS);
 
-      if (!selectAll) throw "select_all not found";
-      selectAll.click();
+    // // кликаем чекбокс первого письма — появляется панель с "Выделить все"
+    // await exec(tabId, () => {
+    //   function rc(el) {
+    //     ["pointerover","pointerenter","mouseover","mouseenter",
+    //      "pointermove","mousemove","pointerdown","mousedown",
+    //      "pointerup","mouseup","click"].forEach(t =>
+    //       el.dispatchEvent(new MouseEvent(t, {bubbles:true,cancelable:true,view:window}))
+    //     );
+    //   }
+    //   const cb = document.querySelector("a.llc input[type='checkbox']");
+    //   if (!cb) throw "checkbox not found";
+    //   rc(cb);
+    // });
+
+    // ждём появления панели и кликаем "Выделить все"
+    await waitForSelector(tabId, "[title*='Выделить все']", WAIT_PANEL_MS);
+
+    const r2 = await exec(tabId, () => {
+      function rc(el) {
+        ["pointerover","pointerenter","mouseover","mouseenter",
+         "pointermove","mousemove","pointerdown","mousedown",
+         "pointerup","mouseup","click"].forEach(t =>
+          el.dispatchEvent(new MouseEvent(t, {bubbles:true,cancelable:true,view:window}))
+        );
+      }
+      const btn = document.querySelector("[title*='Выделить все']");
+      if (!btn) return "select_all not found";
+      rc(btn);
+      return "select_all clicked";
     });
 
-    // 3️⃣ ждём кнопку "Прочитать"
-    await waitForSelector(
-      tabId,
-      "[data-name='read'], [title*='Прочитать'], .icon_mark-read",
-      10000
-    );
+    // ждём кнопку "Прочитать" (появляется после выделения всех)
+    await waitForSelector(tabId, ".button2_status_read", WAIT_PANEL_MS);
 
-    // 4️⃣ нажимаем "Прочитать"
-    await exec(tabId, () => {
-      const readBtn =
-        document.querySelector("[data-name='read']") ||
-        document.querySelector("[title*='Прочитать']") ||
-        document.querySelector(".icon_mark-read");
-
-      if (!readBtn) throw "read button not found";
-      readBtn.click();
+    const r3 = await exec(tabId, () => {
+      function rc(el) {
+        ["pointerover","pointerenter","mouseover","mouseenter",
+         "pointermove","mousemove","pointerdown","mousedown",
+         "pointerup","mouseup","click"].forEach(t =>
+          el.dispatchEvent(new MouseEvent(t, {bubbles:true,cancelable:true,view:window}))
+        );
+      }
+      const btn = document.querySelector(".button2_status_read");
+      if (!btn) return "read btn not found";
+      rc(btn);
+      return "read btn clicked";
     });
+
+    // ждём пока Mail.ru применит изменение перед закрытием вкладки
+    await new Promise(r => setTimeout(r, MARK_READ_DELAY_MS));
+
   } catch (e) {
     console.error("markAllReadInList FAILED:", e);
   } finally {
-    try {
-      await chrome.tabs.remove(tabId);
-    } catch {}
+    try { await chrome.tabs.remove(tabId); } catch {}
   }
 }
 
@@ -362,8 +380,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await chrome.storage.local.get(LAST_MESSAGES_KEY);
         sendResponse({ accounts, cache });
       } else if (msg.type === "markRead") {
-        console.log("markRead запрос:", msg);
-
+    
         try {
           // ▶️ 1 письмо — пришёл href
           if (msg.href) {

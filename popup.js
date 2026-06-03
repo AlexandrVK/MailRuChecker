@@ -84,21 +84,21 @@ async function refresh() {
         ev.stopPropagation();
         if (!msgs.length) return;
 
-        console.log("Прочитать все - начало");
-
         const prev = readAllBtn.textContent;
         readAllBtn.disabled = true;
         readAllBtn.textContent = "…";
-        try {
-          // Отправляем запрос на пометку всех писем
-          const res = await send({ type: "markRead", email });
-          console.log("Ответ от background:", res);
-          if (!res?.ok) throw new Error(res?.error || "markRead failed");
 
-          // ждём обновления данных
-          await waitForCacheUpdate(email, msgs.length);
+        // оптимистично делаем все строки серыми сразу
+        const rows = block.querySelectorAll(".msg-row");
+        rows.forEach(r => r.classList.add("fading"));
+
+        try {
+          const res = await send({ type: "markRead", email });
+          if (!res?.ok) throw new Error(res?.error || "markRead failed");
         } catch (e) {
           console.error("Ошибка markRead:", e);
+          // rollback — убираем серость при ошибке
+          rows.forEach(r => r.classList.remove("fading"));
           alert("Не удалось пометить все письма прочитанными.");
         } finally {
           readAllBtn.disabled = false;
@@ -160,9 +160,7 @@ async function refresh() {
 
                 if (!res?.ok) throw new Error(res?.error || "markRead failed");
 
-                // ждём обновления данных
-                await waitForCacheUpdate(email, msgs.length);
-                await refresh(); // источник истины
+                await refresh();
               } catch (e) {
                 console.error("Ошибка пометки:", e);
                 row.classList.remove("fading"); // rollback
@@ -214,7 +212,7 @@ async function refresh() {
   }
 }
 
-// ждём, пока кэш обновится
+// ✅ НОВАЯ ФУНКЦИЯ: ждём, пока кэш обновится
 async function waitForCacheUpdate(email, oldCount, maxWait = 5000) {
   const startTime = Date.now();
 

@@ -308,21 +308,7 @@ async function markAllReadInList(url) {
 
     await waitForSelector(tabId, "a.llc", WAIT_LETTERS_MS);
 
-    // // кликаем чекбокс первого письма — появляется панель с "Выделить все"
-    // await exec(tabId, () => {
-    //   function rc(el) {
-    //     ["pointerover","pointerenter","mouseover","mouseenter",
-    //      "pointermove","mousemove","pointerdown","mousedown",
-    //      "pointerup","mouseup","click"].forEach(t =>
-    //       el.dispatchEvent(new MouseEvent(t, {bubbles:true,cancelable:true,view:window}))
-    //     );
-    //   }
-    //   const cb = document.querySelector("a.llc input[type='checkbox']");
-    //   if (!cb) throw "checkbox not found";
-    //   rc(cb);
-    // });
-
-    // ждём появления панели и кликаем "Выделить все"
+    // кликаем "Выделить все" — выделяются все письма, появляется панель "Прочитать"
     await waitForSelector(tabId, "[title*='Выделить все']", WAIT_PANEL_MS);
 
     const r2 = await exec(tabId, () => {
@@ -395,21 +381,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             console.log("Массовая пометка завершена");
           }
 
+          // сначала обновляем кэш и бейдж, потом отвечаем popup
+          await pollAll();
           sendResponse({ ok: true });
         } catch (e) {
           console.error("markRead FAILED:", e);
           sendResponse({ ok: false, error: String(e) });
         }
-
-        console.log("Запуск pollAll для обновления");
-
-        // Даём время на применение изменений на сервере
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-
-        await pollAll();
-        console.log("pollAll завершён");
-
-        sendResponse({ ok: true });
       } else if (msg.type === "addAccount") {
         const { [ACCOUNTS_KEY]: accounts = [] } =
           await chrome.storage.local.get(ACCOUNTS_KEY);
